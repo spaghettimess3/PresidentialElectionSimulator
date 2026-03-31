@@ -284,7 +284,7 @@ async function runElection() {
     const demCand = playerCandidate.party === "Dem" ? playerCandidate : opponentCandidate;
     const repCand = playerCandidate.party === "Rep" ? playerCandidate : opponentCandidate;
     const isReagan = repCand.name === "Ronald Reagan";
-    const isTrumpOrTeddy = ["Donald Trump", "Theodore Roosevelt"].includes(repCand.name);
+    const isTrump = repCand.name === "Donald Trump";
     const isModernDem = modernDemocrats.includes(demCand.name);
 
     for (let layer of layers) {
@@ -297,29 +297,29 @@ async function runElection() {
 
         // Reagan rule — guaranteed big win
         if (isReagan) {
-            demAdvantage -= 48;                     // massive Republican edge
-            // Against powerful modern Democrats he still loses ~20 states (±3)
+            demAdvantage -= 48;
             if (isModernDem) {
-                if (stateLean[name] > 5) demAdvantage += 42;     // safe blue stays blue
-                else if (stateLean[name] > -5) demAdvantage += 22; // swing/light blue flips to Dem
+                if (stateLean[name] > 5) demAdvantage += 42;
+                else if (stateLean[name] > -5) demAdvantage += 22;
             }
         }
-        // Trump & Teddy — decently close races (narrow margins ~150-250 EV)
-        else if (isTrumpOrTeddy) {
-            if (stateLean[name] < -10) demAdvantage -= 18;   // deep red still red
-            else if (stateLean[name] < 0) demAdvantage -= 9; // red-leaning
-            else demAdvantage -= 4;                          // small general edge
+        // Trump — wins most of the time but can lose (mild edge only)
+        else if (isTrump) {
+            if (stateLean[name] < -10) demAdvantage -= 12;   // deep red
+            else if (stateLean[name] < 0) demAdvantage -= 7; // red-leaning
+            else demAdvantage -= 3;                          // small general edge
         }
+        // Everyone else (including Teddy Roosevelt) = completely random (only base leans + strength + randomness)
 
-        // Modern Democrats (2016–now) keep blue states blue + deep red states (GA, FL, TX, OK) almost always red
+        // Modern Democrats (2016–now) keep blue states blue + GA/FL/TX/OK almost always red
         if (isModernDem && !isReagan) {
-            if (stateLean[name] > 5) demAdvantage += 14;     // blue states even bluer
+            if (stateLean[name] > 5) demAdvantage += 14;
             if (["Georgia", "Florida", "Texas", "Oklahoma"].includes(name)) {
-                demAdvantage -= 18;                          // these four stay red almost always
+                demAdvantage -= 18;
             }
         }
 
-        // Final random factor (tightened for realism)
+        // Final random factor
         demAdvantage += (Math.random() * 14 - 7);
 
         const winnerParty = demAdvantage > 0 ? "Dem" : "Rep";
