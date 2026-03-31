@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Election Simulator</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+body { margin:0; font-family:sans-serif; background:#0a1428; color:white; }
+.screen { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.hidden { display:none; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:15px; width:90%; max-width:1000px; }
+.card { padding:18px; background:rgba(255,255,255,0.1); border-radius:10px; cursor:pointer; text-align:center; }
+.card:hover { background:rgba(255,255,255,0.25); }
+.dem { color:#4aa3ff; }
+.rep { color:#ff5a5a; }
+button { padding:12px; margin-top:15px; border:none; border-radius:8px; cursor:pointer; background:#1e90ff; color:white; }
+#map { position:absolute; inset:0; background:#0a1428; } /* NAVY UNDER MAP */
+#panel { position:absolute; top:70px; left:20px; width:320px; background:rgba(0,0,0,0.75); padding:15px; border-radius:10px; z-index:1000; }
+#log { max-height:300px; overflow:auto; font-size:14px; }
+</style>
+</head>
+<body>
+
+<div id="start" class="screen">
+  <h1>Election Simulator</h1>
+  <button id="startBtn">Start</button>
+</div>
+
+<div id="candidate" class="screen hidden">
+  <h2>Choose Your Candidate</h2>
+  <div class="grid" id="candidateGrid"></div>
+  <button id="backStart">Back</button>
+</div>
+
+<div id="opponent" class="screen hidden">
+  <h2>Choose Opponent</h2>
+  <div id="chosenText"></div>
+  <div class="grid" id="opponentGrid"></div>
+  <button id="backCandidate">Back</button>
+</div>
+
+<div id="game" class="hidden">
+  <div id="map"></div>
+  <div id="panel">
+    <h3 id="matchup"></h3>
+    <h2><span id="blue">0</span> vs <span id="red">0</span></h2>
+    <button id="runBtn">Run Election</button>
+    <button onclick="location.reload()">Restart</button>
+    <div id="log"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+// BALANCED CANDIDATE LIST
+const candidates = [
+  // DEMOCRATS
+  {name:"Joe Biden", party:"Dem", strength:90},
+  {name:"Barack Obama", party:"Dem", strength:95},
+  {name:"Bill Clinton", party:"Dem", strength:92},
+  {name:"Hillary Clinton", party:"Dem", strength:88},
+  {name:"Al Gore", party:"Dem", strength:86},
+  {name:"John Kerry", party:"Dem", strength:83},
+  {name:"Jimmy Carter", party:"Dem", strength:84},
+  {name:"Woodrow Wilson", party:"Dem", strength:88},
+  {name:"Thomas Jefferson", party:"Dem", strength:91},
+  {name:"Kamala Harris", party:"Dem", strength:87},
+  {name:"Lyndon B. Johnson", party:"Dem", strength:89},
+  {name:"Franklin D. Roosevelt", party:"Dem", strength:96},
+
+  // REPUBLICANS
+  {name:"Donald Trump", party:"Rep", strength:90},
+  {name:"Ronald Reagan", party:"Rep", strength:95},
+  {name:"George W. Bush", party:"Rep", strength:87},
+  {name:"Richard Nixon", party:"Rep", strength:89},
+  {name:"John McCain", party:"Rep", strength:84},
+  {name:"Mitt Romney", party:"Rep", strength:82},
+  {name:"Abraham Lincoln", party:"Rep", strength:96},
+  {name:"Theodore Roosevelt", party:"Rep", strength:93},
+  {name:"George Washington", party:"Rep", strength:97},
+  {name:"William Howard Taft", party:"Rep", strength:83},
+  {name:"Dwight D. Eisenhower", party:"Rep", strength:94},
+  {name:"Gerald Ford", party:"Rep", strength:85}
+];
+
+let player = null;
+let opponent = null;
+let map = null;
+let geo = null;
+
+// REALISTIC Electoral Votes by State (2020-ish)
+const EV = {
+  "Alabama":9,"Alaska":3,"Arizona":11,"Arkansas":6,"California":55,"Colorado":9,"Connecticut":7,"Delaware":3,
+  "Florida":29,"Georgia":16,"Hawaii":4,"Idaho":4,"Illinois":20,"Indiana":11,"Iowa":6,"Kansas":6,"Kentucky":8,
+  "Louisiana":8,"Maine":4,"Maryland":10,"Massachusetts":11,"Michigan":16,"Minnesota":10,"Mississippi":6,
+  "Missouri":10,"Montana":3,"Nebraska":5,"Nevada":6,"New Hampshire":4,"New Jersey":14,"New Mexico":5,"New York":29,
+  "North Carolina":15,"North Dakota":3,"Ohio":18,"Oklahoma":7,"Oregon":7,"Pennsylvania":20,"Rhode Island":4,
+  "South Carolina":9,"South Dakota":3,"Tennessee":11,"Texas":38,"Utah":6,"Vermont":3,"Virginia":13,"Washington":12,
+  "West Virginia":5,"Wisconsin":10,"Wyoming":3
+};
+
+const start = document.getElementById("start");
+const candidateScreen = document.getElementById("candidate");
+const opponentScreen = document.getElementById("opponent");
+const gameScreen = document.getElementById("game");
+
+document.getElementById("startBtn").onclick = () => {
+  start.classList.add("hidden");
+  candidateScreen.classList.remove("hidden");
+  loadCandidates();
+};
+document.getElementById("backStart").onclick = () => { candidateScreen.classList.add("hidden"); start.classList.remove("hidden"); };
+document.getElementById("backCandidate").onclick = () => { opponentScreen.classList.add("hidden"); candidateScreen.classList.remove("hidden"); };
+
+function loadCandidates(){
+  const grid = document.getElementById("candidateGrid");
+  grid.innerHTML="";
+  candidates.forEach(c=>{
+    let div=document.createElement("div");
+    div.className="card";
+    div.innerHTML=`<h3 class="${c.party=='Dem'?'dem':'rep'}">${c.name}</h3>${c.party}`;
+    div.onclick=()=>selectPlayer(c);
+    grid.appendChild(div);
+  });
+}
+
+function selectPlayer(c){
+  player = c;
+  candidateScreen.classList.add("hidden");
+  opponentScreen.classList.remove("hidden");
+  document.getElementById("chosenText").innerHTML = `You selected: <strong>${player.name}</strong>`;
+  loadOpponents();
+}
+
+function loadOpponents(){
+  const grid = document.getElementById("opponentGrid");
+  grid.innerHTML="";
+  candidates.forEach(c=>{
+    if(c === player) return;
+    let div=document.createElement("div");
+    div.className="card";
+    div.innerHTML=`<h3 class="${c.party=='Dem'?'dem':'rep'}">${c.name}</h3>${c.party}`;
+    div.onclick=()=>selectOpponent(c);
+    grid.appendChild(div);
+  });
+}
+
+function selectOpponent(c){
+  opponent = c;
+  startGame();
+}
+
+function startGame(){
+  opponentScreen.classList.add("hidden");
+  gameScreen.classList.remove("hidden");
+  document.getElementById("matchup").innerText = `${player.name} vs ${opponent.name}`;
+  map = L.map('map',{zoomControl:false}).setView([37.8,-96],4);
+  fetch('https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json')
+  .then(r=>r.json())
+  .then(data=>{
+    geo=L.geoJSON(data,{style:{color:"#555",weight:1,fillColor:"#222",fillOpacity:0.9}}).addTo(map);
+  });
+}
+
+document.getElementById("runBtn").onclick = async function(){
+  if(!geo){ alert("Map still loading..."); return; }
+  let blue=0, red=0;
+  document.getElementById("log").innerHTML="";
+  let layers=[];
+  geo.eachLayer(l=>layers.push(l));
+  layers.sort(()=>Math.random()-0.5);
+  for(let layer of layers){
+    let state = layer.feature.properties.NAME || layer.feature.properties.name || "Unknown State";
+    let score = (player.strength - opponent.strength) + (Math.random()*40 - 20);
+    let winner = score>0 ? player : opponent;
+    let ev = EV[state] || (Math.floor(Math.random()*15)+3);
+    let color = winner.party==="Dem" ? "#1e90ff" : "#ff3333";
+    layer.setStyle({fillColor:color});
+    if(winner.party==="Dem") blue+=ev; else red+=ev;
+    document.getElementById("blue").innerText=blue;
+    document.getElementById("red").innerText=red;
+    let entry=document.createElement("div");
+    entry.innerHTML=`${state} → ${winner.name}`;
+    entry.style.color=color;
+    document.getElementById("log").prepend(entry);
+    await new Promise(r=>setTimeout(r, 500 + Math.random()*600));
+  }
+};
+</script>
+</body>
+</html>
